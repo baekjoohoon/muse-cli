@@ -622,6 +622,116 @@ def cmd_raw(args):
         gw.close()
 
 
+def cmd_agent_init(args):
+    """Create or reuse a side-chat thread for an agent (wraps session-start)."""
+    from .agents import validate_agent_name, load_agents, save_agents_atomic
+    import time
+
+    name = validate_agent_name(args.name)
+    agents = load_agents()
+
+    # Check if already exists and thread is still valid
+    if name in agents["agents"]:
+        entry = agents["agents"][name]
+        thread_id = entry.get("thread_id")
+        if thread_id:
+            gw = connect(load_config())
+            try:
+                sessions = gw.call_json("sessions.list")
+                session_ids = {s.get("session_id") for s in sessions.get("sessions", [])}
+                if thread_id in session_ids:
+                    out({"name": name, "thread_id": thread_id, "title": entry.get("title"),
+                         "created_at": entry.get("created_at"), "updated_at": entry.get("updated_at"),
+                         "reused": True})
+                    return
+            finally:
+                gw.close()
+
+    # Create new thread
+    gw = connect(load_config())
+    try:
+        params = {"origin": "fresh", "lifecycle": "persistent"}
+        if args.title:
+            params["title"] = args.title
+        result = gw.call_json("session.start", body={"method": "/api/session/start", "params": params})
+        thread_id = result.get("session_id")
+        if not thread_id:
+            raise RuntimeError("session.start did not return session_id")
+
+        now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+        agents["agents"][name] = {
+            "thread_id": thread_id,
+            "title": args.title,
+            "created_at": now,
+            "updated_at": now,
+        }
+        save_agents_atomic(agents)
+        out({"name": name, "thread_id": thread_id, "title": args.title,
+             "created_at": now, "updated_at": now, "reused": False})
+    finally:
+        gw.close()
+
+
+def cmd_agent_list(_args):
+    """List all agents with their status."""
+    from .agents import list_with_status
+
+    gw = connect(load_config())
+    try:
+        agents = list_with_status(gw=gw)
+        out(agents)
+    finally:
+        gw.close()
+
+
+def cmd_agent_send(args):
+    """Send a message to an agent's side-chat (wraps send --thread)."""
+    from .agents import resolve_thread
+
+    gw = connect(load_config())
+    try:
+        try:
+            thread_id, stale = resolve_thread(args.name, gw=gw)
+        except KeyError:
+            print(f"unknown agent '{args.name}'. Run `muse-cli agent init {args.name}` first.",
+                  file=sys.stderr)
+            sys.exit(2)
+
+        if stale:
+            print(f"agent '{args.name}' thread is stale. Run `muse-cli agent init {args.name}` to rebind.",
+                  file=sys.stderr)
+            sys.exit(3)
+
+        ns = argparse.Namespace(text=args.text, thread=thread_id, wait=args.wait)
+        cmd_send(ns)
+    finally:
+        gw.close()
+
+
+def cmd_agent_history(args):
+    """Read an agent's side-chat history (wraps history --thread)."""
+    from .agents import resolve_thread
+
+    gw = connect(load_config())
+    try:
+        try:
+            thread_id, stale = resolve_thread(args.name, gw=gw)
+        except KeyError:
+            print(f"unknown agent '{args.name}'. Run `muse-cli agent init {args.name}` first.",
+                  file=sys.stderr)
+            sys.exit(2)
+
+        if stale:
+            print(f"agent '{args.name}' thread is stale. Run `muse-cli agent init {args.name}` to rebind.",
+                  file=sys.stderr)
+            sys.exit(3)
+
+        ns = argparse.Namespace(thread=thread_id, limit=args.limit, raw=args.raw)
+        cmd_history(ns)
+    finally:
+        gw.close()
+
+
 def main():
     ap = argparse.ArgumentParser(prog="muse-cli", description="CLI for your personal muse.ai agent")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -702,6 +812,21 @@ def main():
     p.add_argument("method"); p.add_argument("--body", default=None)
     p.add_argument("--param", action="append", default=[], help="path param k=v (repeatable)")
     p.add_argument("--timeout", type=int, default=30); p.set_defaults(fn=cmd_raw)
+
+    p = sub.add_parser("agent", help="manage named agent side-chats (wraps session-start/send --thread/history --thread)")
+    agent_sub = p.add_subparsers(dest="agent_op", required=True)
+    p_init = agent_sub.add_parser("init", help="create or reuse a side-chat thread for an agent (wraps session-start)")
+    p_init.add_argument("name"); p_init.add_argument("--title", default=None)
+    p_init.set_defaults(fn=cmd_agent_init)
+    p_list = agent_sub.add_parser("list", help="list all agents")
+    p_list.set_defaults(fn=cmd_agent_list)
+    p_send = agent_sub.add_parser("send", help="send a message to an agent's side-chat (wraps send --thread)")
+    p_send.add_argument("name"); p_send.add_argument("text")
+    p_send.add_argument("--wait", type=int, default=90, help="seconds to wait for reply (0 = don't)")
+    p_send.set_defaults(fn=cmd_agent_send)
+    p_history = agent_sub.add_parser("history", help="read an agent's side-chat history (wraps history --thread)")
+    p_history.add_argument("name"); p_history.add_argument("--limit", type=int, default=10)
+    p_history.add_argument("--raw", action="store_true"); p_history.set_defaults(fn=cmd_agent_history)
 
     args = ap.parse_args()
     # A piped command prints JSON. The notice stays off unless both streams

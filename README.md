@@ -32,6 +32,26 @@ and `muse-cli goals`, then reports back.
 
 ![Droid agent using muse-cli to check status and goals](https://raw.githubusercontent.com/nikships/muse-cli/main/assets/demo-agent.png)
 
+## Agent Side-Chat Workflow
+
+Give any terminal-based coding agent its own persistent Muse side chat for web research, browsing, and delegated tasks.
+
+The `agent` command group wraps the existing `session-start`, `send --thread`, and `history --thread` commands with a local name-to-thread registry. Each agent name maps to one persistent side-chat thread, stored in `~/.config/muse-cli/agents.json` (mode 644, non-sensitive metadata only — no cookies, tokens, or message content).
+
+```bash
+muse-cli agent init opencode          # create or reuse a side chat
+muse-cli agent list                   # show all agents + thread status
+muse-cli agent send opencode "research X" --wait 120
+muse-cli agent history opencode --limit 10
+```
+
+### Why dedicated side chats
+
+- **Isolation:** each agent's context stays separate — no cross-contamination between OpenCode, Codex, and Claude Code conversations.
+- **Persistence:** threads survive agent restarts; re-running `agent init` reuses the same thread.
+- **Auditability:** `agent list` shows which threads are stale (deleted server-side) so you can rebind with `agent init`.
+- **Simplicity:** no need to track thread IDs manually — the registry resolves names to threads automatically.
+
 ## Quick Start
 
 ```bash
@@ -189,6 +209,73 @@ Pipe it into other tools:
 muse-cli send "what's on my calendar today?" | jq -r .reply.text
 ```
 
+## Agent commands
+
+The `agent` command group manages named side-chat threads. It wraps the existing `session-start`, `send --thread`, and `history --thread` commands — those remain unchanged and fully functional on their own.
+
+```bash
+muse-cli agent init <name> [--title "optional title"]
+muse-cli agent list
+muse-cli agent send <name> <text> [--wait N]
+muse-cli agent history <name> [--limit N] [--raw]
+```
+
+- `init` is idempotent: if the name already exists and its thread is still alive, it reuses it; otherwise it creates a fresh side chat.
+- `send` and `history` resolve the name to a thread ID automatically. Unknown names exit with code 2; stale threads (deleted server-side) exit with code 3.
+- The registry lives at `~/.config/muse-cli/agents.json` (mode 644). It stores only names, thread IDs, titles, and timestamps — never cookies, tokens, or message content.
+- Works on Windows, macOS, and Linux. Set `MUSE_CLI_CONFIG_DIR` to override the config directory.
+
+### OpenCode example
+
+```bash
+# In an OpenCode session, give the agent its own persistent side chat:
+muse-cli agent init opencode --title "OpenCode research"
+
+# Send a research task and wait for the reply:
+muse-cli agent send opencode "Find the latest stable release of curl_cffi and summarize breaking changes" --wait 120
+
+# Check the conversation history:
+muse-cli agent history opencode --limit 5
+```
+
+### Codex CLI example
+
+```bash
+# From a Codex CLI session:
+muse-cli agent init codex --title "Codex delegated tasks"
+
+# Delegate a browsing task:
+muse-cli agent send codex "Browse https://example.com and extract the pricing table" --wait 90
+
+# Review what the agent found:
+muse-cli agent history codex --limit 3
+```
+
+### Claude Code example
+
+```bash
+# From a Claude Code session:
+muse-cli agent init claude --title "Claude web research"
+
+# Delegate a long-running research task:
+muse-cli agent send claude "Research the top 3 vector databases for Python and compare their licenses" --wait 180
+
+# Check results:
+muse-cli agent history claude --limit 5
+```
+
+### Gemini CLI example
+
+The pattern is the same for any terminal-based agent that can run shell commands:
+
+```bash
+muse-cli agent init gemini --title "Gemini research"
+muse-cli agent send gemini "Search for recent changes to the Python GIL" --wait 120
+muse-cli agent history gemini --limit 5
+```
+
+The thread ID is auto-resolved from the local registry — the agent never needs to know or track it. The underlying `send --thread`, `session-start`, and `history --thread` commands remain fully functional for direct use.
+
 ## How it works
 
 ![how muse-cli connects](https://raw.githubusercontent.com/nikships/muse-cli/main/assets/how-it-works.webp)
@@ -251,6 +338,18 @@ is a note of which method broke and the new server error text.
 <a href="https://github.com/nikships/muse-cli/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=nikships/muse-cli" />
 </a>
+
+## Referral code
+
+An optional referral code exists: `W09QZF`. It is **not required** to use muse-cli or any of its features.
+
+> **Disclaimer:** Verification of reward terms via direct Muse browsing was blocked by organization policy on 2026-09-27. Reward terms (quantity, eligibility, period) are unverified and not stated here. Check muse.ai directly for current terms.
+
+## Credits
+
+Based on / forked from [nikships/muse-cli](https://github.com/nikships/muse-cli) by [Nik](https://github.com/nikships). Original MIT License preserved.
+
+The agent side-chat workflow wraps the existing `session-start`, `send --thread`, and `history --thread` commands — it does not reimplement or invent new gateway methods.
 
 ## License
 
