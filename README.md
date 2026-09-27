@@ -2,6 +2,8 @@
 
 # muse-cli
 
+[English](README.md) | [한국어](README.ko.md)
+
 Talk to your personal muse.ai AI agent from the terminal.
 
 [![PyPI](https://img.shields.io/pypi/v/muse-cli?style=for-the-badge)](https://pypi.org/project/muse-cli/)

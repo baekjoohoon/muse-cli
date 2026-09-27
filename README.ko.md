@@ -2,6 +2,8 @@
 
 # muse-cli
 
+[English](README.md) | [한국어](README.ko.md)
+
 터미널에서 개인 muse.ai AI 에이전트와 대화하세요.
 
 [![PyPI](https://img.shields.io/pypi/v/muse-cli?style=for-the-badge)](https://pypi.org/project/muse-cli/)
